@@ -84,7 +84,6 @@ var getRdioAlbums = function(config) {
 	return dfd.promise;
 };
 
-var trials = 10;
 var getSpotifyAlbums = function(config, rdioAlbums) {
 	console.log('Fetching ' + rdioAlbums.length + ' Rdio albums to import to Spotify');
 
@@ -92,11 +91,6 @@ var getSpotifyAlbums = function(config, rdioAlbums) {
 	var dfd = Q.defer();
 	var dfdList = [];
 	rdioAlbums.forEach(function(album) {
-		if (trials > 0) {
-			trials--;
-		} else {
-			return;
-		}
 		var albumDfd = Q.defer();
 		dfdList.push(albumDfd);
 		var query = 'album' + querystring.escape(':' + album.name) + '+artist' + querystring.escape(':' + album.artist);

@@ -1,5 +1,7 @@
 # spotify-import
 
+_Warning! This program is a work in progress and is still working through some bugs. I'll remove this when it's fully functioning. View the issues section for more details._
+
 ### 1. Get your Rdio data
 
 Alex Hanson created a solid tool for exporting Rdio data. Find it [here](https://github.com/alexhanson/rdio-export). One of the outputs of this tool is an `albums.ndjson` file. Store this in a memorable location on your computer – this program will require it.
@@ -23,3 +25,9 @@ Probably the easiest way to do this is the following:
 
 ### 5. Run and follow the prompts
 - `$ ./import`
+
+### Issues
+
+- _The program hits the rate limit just about immediately._ Spotify doesn't really like you hammering their search api, so we need to find a way to throttle it. I attempted to throw in some sleep calls, but there's something up with those too.
+
+- _Many albums are not found._ I'm preferring to search by UPC if we have it, but it seems like it's not finding it regardless. There may be an issue with the way that `unirest` is serializing the query parameters with its `.query` call, but it requires some more fine-tuned testing.

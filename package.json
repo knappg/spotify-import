@@ -1,0 +1,32 @@
+{
+  "name": "spotify-import",
+  "version": "1.0.0",
+  "description": "Takes exported data from Rdio and imports it to Spotify",
+  "main": "import",
+  "dependencies": {
+    "natural": "^0.2.1",
+    "q": "^1.4.1",
+    "ramda": "^0.18.0",
+    "unirest": "^0.4.2",
+    "request": "^2.67.0"
+  },
+  "devDependencies": {
+    "natural": "^0.2.1",
+    "q": "^1.4.1",
+    "ramda": "^0.18.0",
+    "sleep": "^3.0.0",
+    "unirest": "^0.4.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "spotify",
+    "rdio",
+    "import",
+    "export",
+    "api"
+  ],
+  "author": "Galen Knapp",
+  "license": "ISC"
+}

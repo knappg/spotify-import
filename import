@@ -1,0 +1,180 @@
+#!/usr/bin/env node
+// Overall Process:
+// 1. Search spotify for album data
+// 2. Sort albums by natural string similarity
+// 4. Make a request to save the album in spotify
+
+var readline = require('readline');
+var fs = require('fs');
+var querystring = require('querystring');
+
+var unirest = require('unirest');
+var natural = require('natural');
+var Q = require('q');
+var R = require('ramda');
+var sleep = require('sleep');
+
+
+var main = function() {
+	readUserInput().then(function(config) {
+		var saveAlbumsToSpotifyWithConfig = R.partial(saveAlbumsToSpotify, [config]);
+		var getSpotifyAlbumsWithConfig = R.partial(getSpotifyAlbums, [config]);
+
+		getRdioAlbums(config)
+			.then(getSpotifyAlbumsWithConfig)
+			.then(saveAlbumsToSpotifyWithConfig);
+	});
+}
+
+
+var readUserInput = function() {
+	var dfd = Q.defer();
+	config = {};
+
+	var rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout
+	});
+
+	rl.question('Path to Rdio album data: ', function(answer) {
+		config.albumFilePath = answer;
+		rl.question('Access key: ', function(answer) {
+			config.accessToken = answer;
+			rl.close();
+			dfd.resolve(config);
+		});
+	});
+
+	return dfd.promise;
+};
+
+
+var getRdioAlbums = function(config) {
+	// Each album is:
+	// {album: <album name>, artist: <artist name>}
+	var albums = [];
+	var fileContents = new String(fs.readFileSync(config.albumFilePath));
+
+	fileContents.split('\n').forEach(function(albumData, idx) {
+		if (!albumData) {
+			return;
+		}
+		try {
+			var rdioAlbumData = JSON.parse(albumData);
+			var albumObject = {
+				name: rdioAlbumData.name,
+				artist: rdioAlbumData.artist
+			};
+			var upc = null;
+			if (rdioAlbumData.upcs && rdioAlbumData.upcs.length) {
+				upc = rdioAlbumData.upcs[0];
+			}
+			albums.push({
+				name: rdioAlbumData.name,
+				artist: rdioAlbumData.artist,
+				upc: upc
+			});		
+		} catch (e) {
+			console.error('Error while parsing album JSON', e);
+		}
+		
+	});
+	var dfd = Q.defer();
+	dfd.resolve(albums);
+	return dfd.promise;
+};
+
+var trials = 10;
+var getSpotifyAlbums = function(config, rdioAlbums) {
+	console.log('Fetching ' + rdioAlbums.length + ' Rdio albums to import to Spotify');
+
+	var spotifyAlbumIds = [];
+	var dfd = Q.defer();
+	var dfdList = [];
+	rdioAlbums.forEach(function(album) {
+		if (trials > 0) {
+			trials--;
+		} else {
+			return;
+		}
+		var albumDfd = Q.defer();
+		dfdList.push(albumDfd);
+		var query = 'album' + querystring.escape(':' + album.name) + '+artist' + querystring.escape(':' + album.artist);
+		if (album.upc) {
+			query = querystring.escape('upc:' + album.upc);
+		}
+		var request = unirest
+			.get('https://api.spotify.com/v1/search')
+			.type('json')
+			.headers({
+				'Authorization': 'Bearer ' + config.accessToken
+			})
+			.query({
+				q: query,
+				type: 'album',
+				limit: '5'
+			})
+			.end(function(response) {
+				if (!response.body.albums) {
+					var errorMessage = 'Error while retrieving: ' + album.name;
+					if (response.body.message) {
+						errorMessage += '. Message: ' + response.body.message;
+					}
+					errorMessage += ". " + response.code;
+					console.error(errorMessage);
+					albumDfd.resolve();
+					return;
+				}
+				if (response.body.albums.total == 0) {
+					console.error('No matches found for album: ' + album.name);
+					albumDfd.resolve();
+					return;
+				}
+				var albums = R.sortBy(
+					R.compose(
+						R.partial(natural.JaroWinklerDistance, [album.name.toLowerCase()]),
+						R.toLower,
+						R.prop('name')
+					)
+				)(response.body.albums.items);
+				console.log(albums[0].id);
+				spotifyAlbumIds.push(albums[0].id);
+				albumDfd.resolve();
+			});
+			sleep.sleep(1);
+	});
+	Q.all(dfdList).then(function() {
+		dfd.resolve(spotifyAlbumIds);
+	})
+	return dfd.promise;
+};
+
+/**
+ * We can only save 50 albums per call - so they need to be batched
+ */
+var saveAlbumsToSpotify = function(config, spotifyAlbumIds) {
+	var batches = R.splitEvery(50, spotifyAlbumIds);
+	batches.forEach(R.partial(config, [config]));
+};
+
+var saveAlbumBatch = function(config, spotifyAlbumIds) {
+	var requestData = spotifyAlbumIds
+			.map(function(albumId) {return '"' + albumId + '"';})
+			.join(',');
+	requestData = '[' + requestData + ']';
+
+	var nextRequest = unirest
+		.put('https://api.spotify.com/v1/me/albums')
+		.type('json')
+		.headers({
+			'Authorization': 'Bearer ' + config.accessToken
+		})
+		.send(requestData)
+		.end(function(response) {
+			if (!response.code == 201 || !response.code == 200) {
+				console.error('Error while saving album batch: "' + response.body.message + '"');
+			}
+		}); 
+};
+
+main();

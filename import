@@ -6,7 +6,6 @@
 
 var readline = require('readline');
 var fs = require('fs');
-var querystring = require('querystring');
 
 var unirest = require('unirest');
 var natural = require('natural');
@@ -73,12 +72,12 @@ var getRdioAlbums = function(config) {
 				name: rdioAlbumData.name,
 				artist: rdioAlbumData.artist,
 				upc: upc
-			});		
+			});
 		} catch (e) {
 			console.error('Error while parsing album JSON', e);
 		}
-		
 	});
+
 	var dfd = Q.defer();
 	dfd.resolve(albums);
 	return dfd.promise;
@@ -93,9 +92,9 @@ var getSpotifyAlbums = function(config, rdioAlbums) {
 	rdioAlbums.forEach(function(album) {
 		var albumDfd = Q.defer();
 		dfdList.push(albumDfd);
-		var query = 'album' + querystring.escape(':' + album.name) + '+artist' + querystring.escape(':' + album.artist);
+		var query = 'album:' + album.name + ' artist:' + album.artist;
 		if (album.upc) {
-			query = querystring.escape('upc:' + album.upc);
+			query = 'upc:' + album.upc;
 		}
 		var request = unirest
 			.get('https://api.spotify.com/v1/search')
@@ -168,7 +167,7 @@ var saveAlbumBatch = function(config, spotifyAlbumIds) {
 			if (!response.code == 201 || !response.code == 200) {
 				console.error('Error while saving album batch: "' + response.body.message + '"');
 			}
-		}); 
+		});
 };
 
 main();

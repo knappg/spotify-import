@@ -6,7 +6,6 @@
 
 var readline = require('readline');
 var fs = require('fs');
-var querystring = require('querystring');
 
 var unirest = require('unirest');
 var natural = require('natural');

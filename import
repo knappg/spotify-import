@@ -88,69 +88,87 @@ var getSpotifyAlbums = function(config, rdioAlbums) {
 
 	var spotifyAlbumIds = [];
 	var dfd = Q.defer();
-	var dfdList = [];
-	rdioAlbums.forEach(function(album) {
-		var albumDfd = Q.defer();
-		dfdList.push(albumDfd);
-		var query = 'album:' + album.name + ' artist:' + album.artist;
-		if (album.upc) {
-			query = 'upc:' + album.upc;
-		}
-		var request = unirest
-			.get('https://api.spotify.com/v1/search')
-			.type('json')
-			.headers({
-				'Authorization': 'Bearer ' + config.accessToken
-			})
-			.query({
-				q: query,
-				type: 'album',
-				limit: '5'
-			})
-			.end(function(response) {
-				if (!response.body.albums) {
-					var errorMessage = 'Error while retrieving: ' + album.name;
-					if (response.body.message) {
-						errorMessage += '. Message: ' + response.body.message;
-					}
+
+	if (!rdioAlbums.length) {
+		dfd.resolve([]);
+	} else {
+		var firstAlbum = rdioAlbums.pop();
+		getNextAlbum(config, firstAlbum, spotifyAlbumIds, dfd, rdioAlbums);
+	}
+
+	return dfd.promise;
+};
+
+var getNextAlbum = function(config, album, spotifyAlbumsResult, dfd, allAlbums) {
+	var query = 'album:' + album.name + ' artist:' + album.artist;
+	if (album.upc) {
+		query = 'upc:' + album.upc;
+	}
+	console.log('Fetching album: ' + album.name);
+	var request = unirest
+		.get('https://api.spotify.com/v1/search')
+		.type('json')
+		.headers({
+			'Authorization': 'Bearer ' + config.accessToken
+		})
+		.query({
+			q: query,
+			type: 'album',
+			limit: '5'
+		})
+		.end(function(response) {
+			if (!response.body.albums || response.body.albums.total == 0) {
+				if (response.headers['retry-after'] && response.code == 429) {
+					sleep.sleep(response.headers['retry-after']);
+					getNextAlbum(config, album, spotifyAlbumsResult, dfd, allAlbums);
+					return;
+				}
+				var errorMessage = 'Error while retrieving: ' + album.name;
+				if (response.body.message || response.code != 200) {
+					errorMessage += '. Message: ' + response.body.message;
 					errorMessage += ". " + response.code;
 					console.error(errorMessage);
-					albumDfd.resolve();
-					return;
-				}
-				if (response.body.albums.total == 0) {
+				} else if (response.body.albums.total == 0) {
 					console.error('No matches found for album: ' + album.name);
-					albumDfd.resolve();
+				}
+				if (!allAlbums.length) {
+					dfd.resolve(spotifyAlbumsResult);
+					return;
+				} else {
+					var nextAlbum = allAlbums.pop();
+					getNextAlbum(config, nextAlbum, spotifyAlbumsResult, dfd, allAlbums);
 					return;
 				}
-				var albums = R.sortBy(
-					R.compose(
-						R.partial(natural.JaroWinklerDistance, [album.name.toLowerCase()]),
-						R.toLower,
-						R.prop('name')
-					)
-				)(response.body.albums.items);
-				console.log(albums[0].id);
-				spotifyAlbumIds.push(albums[0].id);
-				albumDfd.resolve();
-			});
-			sleep.sleep(1);
-	});
-	Q.all(dfdList).then(function() {
-		dfd.resolve(spotifyAlbumIds);
-	})
-	return dfd.promise;
+			}
+
+			var albums = R.sortBy(
+				R.compose(
+					R.partial(natural.JaroWinklerDistance, [album.name.toLowerCase()]),
+					R.toLower,
+					R.prop('name')
+				)
+			)(response.body.albums.items);
+			spotifyAlbumsResult.push(albums[0].id);
+			if (!allAlbums.length) {
+				dfd.resolve(spotifyAlbumsResult);
+			} else {
+				var nextAlbum = allAlbums.pop();
+				getNextAlbum(config, nextAlbum, spotifyAlbumsResult, dfd, allAlbums);
+			}
+		});
 };
 
 /**
  * We can only save 50 albums per call - so they need to be batched
  */
 var saveAlbumsToSpotify = function(config, spotifyAlbumIds) {
+	console.log('saveAlbumsToSpotify! ' + spotifyAlbumIds.length);
 	var batches = R.splitEvery(50, spotifyAlbumIds);
-	batches.forEach(R.partial(config, [config]));
+	batches.forEach(R.partial(saveAlbumBatch, [config]));
 };
 
 var saveAlbumBatch = function(config, spotifyAlbumIds) {
+	console.log('Saving album batch of 50...');
 	var requestData = spotifyAlbumIds
 			.map(function(albumId) {return '"' + albumId + '"';})
 			.join(',');
